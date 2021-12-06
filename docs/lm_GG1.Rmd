@@ -1,0 +1,127 @@
+<!--% Voici un exemple de modèle pour relever le challenge "models". Copiez ce document sous le nom de votre propre modèle dans le sous-dossier `docs`, éditez-le, développez votre modèle et soumettez vos résultats (voir aussi README.md). Bonnes chances ! -->
+
+<!--% Donner un nom à votre modèle ici (pour plus de facilité, utilisez le même nom que celui que vous avez donné à ce fichier .Rmd). N'OUBLIEZ PAS DE MODIFIER CE NOM A CHAQUE NOUVELLE ITERATION et utilisez uniquement des lettres a-z, A-Z, des chiffres 0-9, un trait souligné (_) ou un signe moins (-). NE PAS REALISER CORRECTEMENT CETTE CONSIGNE VOUS EXPOSE A UNE DISQUALIFICATION POUR CE MODELE ! -->
+
+<!--# Astuce : ne donnez pas un nom trop évident qui pourrait suggérer à vos concurrents quel modèle vous utilisez ! -->
+
+```{r model_name, echo=FALSE}
+model_name <- "lm_GG1"
+```
+
+<!--% Indiquez les logins GitHub des membres du team ci dessous (remplacez 'login1' et 'login2' par vos logins respectifs). -->
+
+```{r authors_logins, echo=FALSE}
+authors_logins <- "Guillaume-Gégo"
+```
+
+```{r setup, echo=FALSE,include=FALSE}
+SciViews::R
+# Au cas où vous voudriez représenter un modèle non linéaire
+# (ne modifiez rien dans ce chunk)
+as.function.nls <- function(x, ...) {
+  nls_model <- x
+  name_x <- names(nls_model$dataClasses)
+  stopifnot(length(name_x) == 1)
+  function(x) predict(nls_model, newdata = structure(list(x), names = name_x))
+}
+
+# Nom du dépôt
+repos <- sub("\\.git$", "", 
+  basename(git2r::remote_url(here::here())))
+# Importation des deux jeux de données
+train <- read(here::here("data/train.rds"))
+test <- read(here::here("data/test.rds"))
+```
+
+<!--% Ne touchez pas à l'entête YAML ci-dessous : elle sera générée automatiquement à partir des autres informations du document. -->
+
+---
+title: "`r paste(model_name, repos, sep = " - ")`"
+date: "`r Sys.time()`"
+author: "`r authors_logins`"
+output: html_notebook
+---
+
+## Résumé
+
+<!--% Décrivez ici dans les grandes lignes (5-10 max), les options mises en œuvre dans votre modèle pour en augmenter les performances par rapport au modèle de base proposé. -->
+Tout d'abord, on analyse le graphique visuellement. On constate une allure logistique, avec une asymptote horizontale à 20% de mortalité. On va donc utiliser un modèle logistique généralisé à quatre paramètres.
+  
+## Description des données
+
+<!--% Effectuez ici les statistiques descriptives qui vous sont nécessaires pour appréhender les données, sans toutefois vous éterniser trop dessus (10min max). -->
+
+```{r}
+skimr::skim(train)
+```
+  
+Deux données, dose (de fipronil en µg) et mortality (en %), aucune donnée manquante.
+  
+```{r}
+chart(data = train, mortality ~ dose) +
+  geom_point()
+```
+  
+D'office pas une linéaire, va falloir utiliser un truc ressemblant à une équation logistique. Sauf que l'asymptote commence en 20 = on a une mortalité de base comprise dans le modèle qui nous force à utiliser un modèle logistique généralisé à quatre paramètres au lieu d'un modèle logistique classique.
+  
+## Ajustement d'un modèle logistique généralisé à quatre paramètres
+
+<!--% Placez ici le code qui génère votre modèle et commentez-le brièvement. Appelez toujours votre modèle `my_model` ! -->
+
+Les arguments sont A, la première asymptote horizontale (= y0 ), B, la seconde asymptote horizontale (= y∞), xmid (= t0) et scal (= k).
+
+```{r learning}
+set.seed(4972) # ATTENTION: utilisez ici un nombre différent pour chaque modèle!
+  
+my_model <- nls(data = train, mortality ~ SSfpl(dose, A, B, xmid, scal))
+```
+
+<!--% Effectuez ci-dessous toutes les analyses complémentaires que vous jugez utiles pour vérifier votre modèle et commentez-les (ci-dessous seulement un exemple de tableau et de graphique). -->
+
+```{r diagnostic}
+summary(my_model)
+```
+Les estimations pour les diférents paramètres sont les suivants: A = 7.41 (= y0), B = 100.1 (= y∞), xmid = 0.2297 (= t0), scal = 0.04292 (= k). La "Residual standard error" est très faible (0.836), impliquant la précision du modèle!
+  
+```{r}
+# Définition des paramètres
+fplogis_dm <- tibble(dose = seq(0.15, 0.40, by = 0.01), mortalite = SSfpl(dose, A = 7.41, B = 100.1, xmid = 0.2297, scal = 0.04292))
+fplogis_dm
+
+# Représentation du modèle
+fplogis_graph <- chart(data = fplogis_dm, mortalite ~ dose) +
+  geom_line() +
+  xlab("Dose [µg]") +
+  ylab("Mortalité [%]") +
+  geom_vline(xintercept = 0.15, col = "darkgray") +
+  geom_hline(yintercept = c(19.92869, (100.1-7.41)/2 + 7.41, 100.1), col = "gray", linetype = "dashed") +
+  geom_vline(xintercept = 0.2297, col = "gray", linetype = "dashed") +
+  annotate("text", label = "A", x = 0.4, y = 19.92869) +
+  annotate("text", label = "B", x = 0.4, y = 100.1) +
+  annotate("text", label = "xmid", x = 0.2297, y = 21) +
+  annotate("text", label = "point d'inflexion", x = 0.25, y = (100.1-7.41)/2 + 7.41)
+  
+fplogis_graph
+  
+chart(data = train, mortality ~ dose) +
+  geom_point()
+```
+
+
+```{r residuals}
+
+```
+
+
+
+## Test et soumission de votre proposition
+
+<!--% Pour utiliser votre modèle afin de prédire la mortalité des abeilles à partir du jeu de données `test` et enregistrer les résultats dans `results/<repos>__<model_name>.rds`, exécutez le chunk suivant SANS LE MODIFIER. Ensuite soumettez vos résultats qui sont dans ce fichier à partir de l'app Shiny <https://sdd.umons.ac.be/B03Sa_challenge> (voir aussi dans le cours en ligne à la section correspondante). -->
+
+```{r results}
+results <- predict(my_model, newdata = test)
+res_file <- glue::glue("{repos}__{model_name}.rds")
+write$rds(results, here::here("results", res_file))
+try(write$rds(results, file.path("/media/sf_downloads", res_file)))
+message("Soumettre : results/", res_file)
+```
